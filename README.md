@@ -61,9 +61,12 @@ Environment variables:
 | --- | --- | --- |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
 | `WORKDIR` | `backend/workdir` | Temporary media directory |
-| `WHISPER_MODEL` | `small` | Local faster-whisper model size or path |
+| `WHISPER_MODEL` | `tiny` | Local faster-whisper model size or path |
 | `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda`, or another faster-whisper device |
 | `WHISPER_COMPUTE_TYPE` | `int8` | Compute type, for example `int8`, `float16`, or `float32` |
+| `WHISPER_CPU_THREADS` | CPU count | CPU threads used by faster-whisper |
+| `WHISPER_NUM_WORKERS` | `1` | faster-whisper model workers |
+| `WHISPER_VAD_FILTER` | `false` | Enable or disable VAD filtering |
 | `TRANSCRIBE_WORKERS` | `1` | Number of background transcription workers |
 
 ## Synchronous Transcription

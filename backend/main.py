@@ -50,6 +50,7 @@ MODEL_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 MODEL_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 MODEL_CPU_THREADS = max(1, int(os.getenv("WHISPER_CPU_THREADS", str(os.cpu_count() or 1))))
 MODEL_NUM_WORKERS = max(1, int(os.getenv("WHISPER_NUM_WORKERS", "1")))
+MODEL_VAD_FILTER = os.getenv("WHISPER_VAD_FILTER", "false").lower() in {"1", "true", "yes"}
 MAX_WORKERS = max(1, int(os.getenv("TRANSCRIBE_WORKERS", "1")))
 
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -499,7 +500,7 @@ def transcribe_audio(
     raw_segments, _info = model.transcribe(
         str(audio_path),
         language=language,
-        vad_filter=True,
+        vad_filter=MODEL_VAD_FILTER,
         beam_size=1,
         best_of=1,
         condition_on_previous_text=False,

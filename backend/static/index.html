@@ -25,24 +25,10 @@
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Built by Hesam Hadadi</p>
-          <h1>Turn lecture videos into clean, readable transcripts.</h1>
+          <h1>Lecture videos to clean transcripts.</h1>
           <p class="lead">
-            Queue multiple videos, track every task in real time, and export polished paragraph-based transcripts without paid transcription APIs.
+            Add one or more videos, review their details, then let local Whisper transcribe them in the background.
           </p>
-        </div>
-        <div class="hero-stats" aria-label="Pipeline summary">
-          <div>
-            <span>Jobs</span>
-            <strong id="jobCount">0</strong>
-          </div>
-          <div>
-            <span>Running</span>
-            <strong id="runningCount">0</strong>
-          </div>
-          <div>
-            <span>Complete</span>
-            <strong id="completedCount">0</strong>
-          </div>
         </div>
       </section>
 
@@ -62,6 +48,7 @@
             placeholder="One URL per line&#10;https://example.com/lecture-1.mp4&#10;https://example.com/lecture-2.mp4"
             required
           ></textarea>
+          <div class="metadata-preview hidden" id="metadataPreview"></div>
 
           <div class="controls">
             <label>
@@ -73,17 +60,6 @@
             </button>
           </div>
         </form>
-
-        <aside class="inspector">
-          <span class="section-kicker">Pipeline</span>
-          <h2>Local processing</h2>
-          <div class="pipeline">
-            <div><i></i><span>Download media</span></div>
-            <div><i></i><span>Extract audio</span></div>
-            <div><i></i><span>Transcribe locally</span></div>
-            <div><i></i><span>Format paragraphs</span></div>
-          </div>
-        </aside>
       </section>
 
       <section class="jobs-section">
@@ -92,7 +68,12 @@
             <span class="section-kicker">Live Queue</span>
             <h2>Task Board</h2>
           </div>
-          <button class="ghost-button" type="button" id="clearJobs">Clear finished</button>
+          <div class="queue-stats">
+            <span><b id="jobCount">0</b> jobs</span>
+            <span><b id="runningCount">0</b> running</span>
+            <span><b id="completedCount">0</b> done</span>
+            <button class="ghost-button" type="button" id="clearJobs">Clear finished</button>
+          </div>
         </div>
         <div id="jobs" class="jobs empty">
           <p>No jobs yet. Add a few lecture links and start a background job.</p>

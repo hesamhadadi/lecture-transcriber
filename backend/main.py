@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -84,10 +85,21 @@ class Segment(BaseModel):
     text: str
 
 
+class VideoMetadata(BaseModel):
+    url: str
+    title: str | None = None
+    duration: float | None = None
+    uploader: str | None = None
+    webpage_url: str | None = None
+    thumbnail: str | None = None
+    ext: str | None = None
+
+
 class TranscriptItem(BaseModel):
     url: str
     transcript: str
     segments: list[Segment]
+    metadata: VideoMetadata | None = None
 
 
 class TranscribeResponse(BaseModel):
@@ -108,6 +120,7 @@ class VideoJobStatus(BaseModel):
     progress: int = 0
     phase: str = "queued"
     error: str | None = None
+    metadata: VideoMetadata | None = None
 
 
 class JobStatus(BaseModel):
@@ -330,6 +343,45 @@ def run_command(cmd: list[str]) -> None:
         )
 
 
+def read_video_metadata(url: str) -> VideoMetadata:
+    cmd = [
+        "yt-dlp",
+        "--dump-json",
+        "--skip-download",
+        "--no-playlist",
+        "--no-warnings",
+        url,
+    ]
+    completed = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=45,
+    )
+
+    if completed.returncode != 0:
+        return VideoMetadata(
+            url=url,
+            title=Path(url.split("?", 1)[0]).name or url,
+        )
+
+    try:
+        data = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return VideoMetadata(url=url, title=Path(url.split("?", 1)[0]).name or url)
+
+    return VideoMetadata(
+        url=url,
+        title=data.get("title") or Path(url.split("?", 1)[0]).name or url,
+        duration=data.get("duration"),
+        uploader=data.get("uploader") or data.get("channel"),
+        webpage_url=data.get("webpage_url") or url,
+        thumbnail=data.get("thumbnail"),
+        ext=data.get("ext"),
+    )
+
+
 def download_with_requests(url: str, target_path: Path) -> Path:
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -490,6 +542,51 @@ def format_segments_as_paragraphs(segments: list[Segment]) -> str:
     return "\n\n".join(paragraph for paragraph in paragraphs if paragraph)
 
 
+TERM_REPLACEMENTS = [
+    (re.compile(r"\b(a\s*loop|adoop|a dup|hadup|hadoop)\b", re.IGNORECASE), "Hadoop"),
+    (re.compile(r"\b(map\s*redus|map\s*reduse|map\s*produced|mop\s*reduce|mapreduce)\b", re.IGNORECASE), "MapReduce"),
+    (re.compile(r"\b(spark\s*sql|sparksql)\b", re.IGNORECASE), "Spark SQL"),
+    (re.compile(r"\b(rdd|rdds)\b", re.IGNORECASE), "RDD"),
+    (re.compile(r"\b(page\s*rank|space\s*rank|page\s*right)\b", re.IGNORECASE), "PageRank"),
+    (re.compile(r"\b(graph\s*x)\b", re.IGNORECASE), "GraphX"),
+    (re.compile(r"\b(graph\s*frames?|graph\s*fame)\b", re.IGNORECASE), "GraphFrames"),
+    (re.compile(r"\b(py\s*spark|pyspark)\b", re.IGNORECASE), "PySpark"),
+    (re.compile(r"\b(polito|polit[o0])\b", re.IGNORECASE), "Polito"),
+    (re.compile(r"\b(sql)\b", re.IGNORECASE), "SQL"),
+]
+
+
+def clean_transcript_text(transcript: str) -> str:
+    cleaned_paragraphs: list[str] = []
+    previous = ""
+    noise_words = {"you", "the", "um", "uh", "ah"}
+
+    for raw_paragraph in transcript.split("\n\n"):
+        paragraph = " ".join(raw_paragraph.split())
+        if not paragraph:
+            continue
+
+        normalized = re.sub(r"[^a-zA-Z ]", "", paragraph).lower().strip()
+        words = normalized.split()
+        if words and len(words) <= 3 and all(word in noise_words for word in words):
+            continue
+
+        for pattern, replacement in TERM_REPLACEMENTS:
+            paragraph = pattern.sub(replacement, paragraph)
+
+        paragraph = re.sub(r"\b(you\s+){2,}you\b", "", paragraph, flags=re.IGNORECASE)
+        paragraph = re.sub(r"\s+([,.?!:;])", r"\1", paragraph)
+        paragraph = re.sub(r"\s{2,}", " ", paragraph).strip()
+
+        if not paragraph or paragraph.lower() == previous.lower():
+            continue
+
+        cleaned_paragraphs.append(paragraph)
+        previous = paragraph
+
+    return "\n\n".join(cleaned_paragraphs)
+
+
 def transcribe_audio(
     audio_path: Path,
     language: str | None,
@@ -523,7 +620,7 @@ def transcribe_audio(
             last_progress = progress
 
     progress_callback(100)
-    return format_segments_as_paragraphs(segments), segments
+    return clean_transcript_text(format_segments_as_paragraphs(segments)), segments
 
 
 def combine_transcripts(items: list[TranscriptItem]) -> str:
@@ -564,6 +661,7 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
         for video_index, url in enumerate(urls):
             video_dir = job_dir / f"video_{video_index:03d}"
             video_dir.mkdir(parents=True, exist_ok=True)
+            metadata = read_video_metadata(url)
 
             update_job(
                 job_id,
@@ -576,6 +674,7 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
                 video_index,
                 status="running",
                 phase="downloading",
+                metadata=metadata,
             )
             set_video_progress(video_index, 0, 20, 0)
             video_path = download_video(url, video_dir)
@@ -602,6 +701,7 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
                     url=url,
                     transcript=transcript,
                     segments=segments,
+                    metadata=metadata,
                 )
             )
             update_job(job_id, completed_videos=video_index + 1)
@@ -661,6 +761,11 @@ def transcribe(req: TranscribeRequest):
         raise HTTPException(status_code=500, detail="Transcription did not produce a result")
 
     return job.result
+
+
+@app.post("/videos/metadata", response_model=list[VideoMetadata])
+def get_video_metadata(req: TranscribeRequest):
+    return [read_video_metadata(url) for url in (req.urls or [])]
 
 
 @app.post("/transcribe/jobs", response_model=JobCreateResponse, status_code=202)

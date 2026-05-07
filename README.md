@@ -7,12 +7,14 @@ The service does not require OpenAI or any external paid transcription API. All 
 ## Features
 
 - Polished web UI at `GET /`
+- Preview video metadata before starting a batch
 - Transcribe one video synchronously with `POST /transcribe`
 - Queue one or more videos for background processing with `POST /transcribe/jobs`
 - Poll reliable job progress with `GET /transcribe/jobs/{job_id}`
 - Fetch completed transcripts with `GET /transcribe/jobs/{job_id}/result`
 - Download direct media URLs or supported video pages through `yt-dlp`
 - Format transcript segments into readable paragraphs
+- Clean noisy transcript fragments and common lecture terms
 
 ## Requirements
 

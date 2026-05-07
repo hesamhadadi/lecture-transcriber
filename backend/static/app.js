@@ -3,6 +3,7 @@ const urlsInput = document.querySelector("#urls");
 const languageInput = document.querySelector("#language");
 const jobsContainer = document.querySelector("#jobs");
 const jobTemplate = document.querySelector("#jobTemplate");
+const metadataPreview = document.querySelector("#metadataPreview");
 const healthState = document.querySelector("#healthState");
 const jobCount = document.querySelector("#jobCount");
 const runningCount = document.querySelector("#runningCount");
@@ -14,6 +15,8 @@ const STORAGE_KEY = "lecture-transcriber-jobs";
 const MAX_POLL_ERRORS = 6;
 const pollers = new Map();
 let jobs = loadJobs();
+let metadataTimer;
+let latestMetadata = [];
 
 function loadJobs() {
   try {
@@ -55,6 +58,59 @@ function getUrls() {
     .split(/\n|,/)
     .map((url) => url.trim())
     .filter(Boolean);
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return "Duration unknown";
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const remainingSeconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+}
+
+async function fetchMetadata(urls) {
+  const response = await fetch("/videos/metadata", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urls }),
+  });
+
+  if (!response.ok) return [];
+  return response.json();
+}
+
+function renderMetadataPreview(metadata) {
+  latestMetadata = metadata;
+  metadataPreview.innerHTML = "";
+  metadataPreview.classList.toggle("hidden", metadata.length === 0);
+
+  metadata.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "metadata-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.title || item.url)}</strong>
+        <span>${formatDuration(item.duration)}${item.uploader ? ` · ${escapeHtml(item.uploader)}` : ""}</span>
+      </div>
+      <small>${escapeHtml(item.ext || "video")}</small>
+    `;
+    metadataPreview.appendChild(row);
+  });
+}
+
+function scheduleMetadataPreview() {
+  window.clearTimeout(metadataTimer);
+  metadataTimer = window.setTimeout(async () => {
+    const urls = getUrls();
+    if (urls.length === 0) {
+      renderMetadataPreview([]);
+      return;
+    }
+
+    metadataPreview.classList.remove("hidden");
+    metadataPreview.innerHTML = '<div class="metadata-row"><span>Loading video details...</span></div>';
+    renderMetadataPreview(await fetchMetadata(urls));
+  }, 650);
 }
 
 async function checkHealth() {
@@ -174,15 +230,19 @@ function stopPolling(jobId) {
 function renderVideoRows(videos = []) {
   return videos
     .map(
-      (video) => `
+      (video) => {
+        const title = video.metadata?.title || video.url;
+        const details = video.metadata?.duration ? formatDuration(video.metadata.duration) : phaseLabel(video.phase);
+        return `
         <div class="video-row">
           <div>
-            <div class="video-url">${escapeHtml(video.url)}</div>
-            <div class="video-phase">${phaseLabel(video.phase)}</div>
+            <div class="video-url">${escapeHtml(title)}</div>
+            <div class="video-phase">${escapeHtml(details)}</div>
           </div>
           <div class="video-percent">${Number(video.progress || 0)}%</div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -215,10 +275,11 @@ function renderJobs() {
     const downloadButton = node.querySelector(".download-button");
 
     const progress = Number(job.progress || 0);
+    const firstMetadata = job.videos?.find((video) => video.metadata)?.metadata;
     pill.textContent = statusLabel(job.status || "queued");
     pill.classList.toggle("completed", job.status === "completed");
     pill.classList.toggle("failed", job.status === "failed");
-    title.textContent = job.current_video || job.videos?.[0]?.url || `Job ${index + 1}`;
+    title.textContent = firstMetadata?.title || job.current_video || job.videos?.[0]?.url || `Job ${index + 1}`;
     percent.textContent = `${progress}%`;
     fill.style.width = `${progress}%`;
     meta.textContent = `${phaseLabel(job.phase)} · ${job.completed_videos || 0}/${job.total_videos || 0} videos`;
@@ -304,7 +365,10 @@ form.addEventListener("submit", async (event) => {
 
 clearUrls.addEventListener("click", () => {
   urlsInput.value = "";
+  renderMetadataPreview([]);
 });
+
+urlsInput.addEventListener("input", scheduleMetadataPreview);
 
 clearJobs.addEventListener("click", () => {
   jobs = jobs.filter((job) => job.status === "running" || job.status === "queued");

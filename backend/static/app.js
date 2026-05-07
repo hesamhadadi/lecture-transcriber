@@ -11,6 +11,7 @@ const clearUrls = document.querySelector("#clearUrls");
 const clearJobs = document.querySelector("#clearJobs");
 
 const STORAGE_KEY = "lecture-transcriber-jobs";
+const MAX_POLL_ERRORS = 6;
 const pollers = new Map();
 let jobs = loadJobs();
 
@@ -114,24 +115,49 @@ function upsertJob(update) {
   renderJobs();
 }
 
+function getStoredJob(jobId) {
+  return jobs.find((job) => job.job_id === jobId);
+}
+
 function startPolling(jobId) {
   if (pollers.has(jobId)) return;
 
   const tick = async () => {
     try {
       const status = await fetchStatus(jobId);
-      upsertJob(status);
+      upsertJob({ ...status, poll_errors: 0, poll_warning: "" });
 
       if (status.status === "completed") {
         const result = await fetchResult(jobId);
-        if (result) upsertJob({ ...status, result });
+        if (result) upsertJob({ ...status, poll_errors: 0, poll_warning: "", result });
         stopPolling(jobId);
       }
 
       if (status.status === "failed") stopPolling(jobId);
     } catch (error) {
-      upsertJob({ job_id: jobId, status: "failed", error: error.message });
-      stopPolling(jobId);
+      const current = getStoredJob(jobId) || { job_id: jobId, status: "queued" };
+      const pollErrors = Number(current.poll_errors || 0) + 1;
+
+      if (error.message === "Job not found" || pollErrors >= MAX_POLL_ERRORS) {
+        upsertJob({
+          ...current,
+          status: "failed",
+          poll_errors: pollErrors,
+          error:
+            error.message === "Job not found"
+              ? "This job was lost, likely because the API restarted."
+              : error.message,
+        });
+        stopPolling(jobId);
+        return;
+      }
+
+      upsertJob({
+        ...current,
+        status: current.status === "completed" ? "completed" : "running",
+        poll_errors: pollErrors,
+        poll_warning: `Connection hiccup. Retrying ${pollErrors}/${MAX_POLL_ERRORS}...`,
+      });
     }
   };
 
@@ -197,6 +223,10 @@ function renderJobs() {
     fill.style.width = `${progress}%`;
     meta.textContent = `${phaseLabel(job.phase)} · ${job.completed_videos || 0}/${job.total_videos || 0} videos`;
     videoList.innerHTML = renderVideoRows(job.videos);
+
+    if (job.poll_warning) {
+      meta.textContent = job.poll_warning;
+    }
 
     if (job.error) {
       meta.textContent = job.error;

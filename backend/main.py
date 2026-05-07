@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -40,6 +41,8 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 WORKDIR = Path(os.getenv("WORKDIR", BASE_DIR / "workdir"))
 WORKDIR.mkdir(parents=True, exist_ok=True)
+JOBS_DIR = WORKDIR / "jobs"
+JOBS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
 
 MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
@@ -162,16 +165,62 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def job_path(job_id: str) -> Path:
+    return JOBS_DIR / f"{job_id}.json"
+
+
+def save_job(job: JobStatus) -> None:
+    target_path = job_path(job.job_id)
+    temp_path = target_path.with_suffix(".tmp")
+    temp_path.write_text(
+        json.dumps(job.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temp_path.replace(target_path)
+
+
+def load_job(job_id: str) -> JobStatus | None:
+    path = job_path(job_id)
+
+    if not path.exists():
+        return None
+
+    try:
+        return JobStatus.model_validate_json(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def create_job_status(job_id: str, req: TranscribeRequest) -> JobStatus:
+    now = utc_now()
+    job = JobStatus(
+        job_id=job_id,
+        status="queued",
+        total_videos=len(req.urls or []),
+        videos=[VideoJobStatus(url=url) for url in (req.urls or [])],
+        created_at=now,
+        updated_at=now,
+    )
+
+    with jobs_lock:
+        jobs[job_id] = job
+        save_job(job)
+
+    return job
+
+
 def update_job(job_id: str, **updates) -> None:
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = jobs.get(job_id) or load_job(job_id)
         if not job:
             return
 
         data = job.model_dump()
         data.update(updates)
         data["updated_at"] = utc_now()
-        jobs[job_id] = JobStatus(**data)
+        updated_job = JobStatus(**data)
+        jobs[job_id] = updated_job
+        save_job(updated_job)
 
 
 def update_video_job(
@@ -180,7 +229,7 @@ def update_video_job(
     **updates,
 ) -> None:
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = jobs.get(job_id) or load_job(job_id)
         if not job or video_index >= len(job.videos):
             return
 
@@ -188,12 +237,16 @@ def update_video_job(
         video_data = data["videos"][video_index]
         video_data.update(updates)
         data["updated_at"] = utc_now()
-        jobs[job_id] = JobStatus(**data)
+        updated_job = JobStatus(**data)
+        jobs[job_id] = updated_job
+        save_job(updated_job)
 
 
 def get_job_or_404(job_id: str) -> JobStatus:
     with jobs_lock:
-        job = jobs.get(job_id)
+        job = jobs.get(job_id) or load_job(job_id)
+        if job:
+            jobs[job_id] = job
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -548,17 +601,7 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
 @app.post("/transcribe", response_model=TranscribeResponse)
 def transcribe(req: TranscribeRequest):
     job_id = str(uuid.uuid4())
-    now = utc_now()
-
-    with jobs_lock:
-        jobs[job_id] = JobStatus(
-            job_id=job_id,
-            status="queued",
-            total_videos=len(req.urls or []),
-            videos=[VideoJobStatus(url=url) for url in (req.urls or [])],
-            created_at=now,
-            updated_at=now,
-        )
+    create_job_status(job_id, req)
 
     process_transcription_job(job_id, req)
     job = get_job_or_404(job_id)
@@ -575,17 +618,7 @@ def transcribe(req: TranscribeRequest):
 @app.post("/transcribe/jobs", response_model=JobCreateResponse, status_code=202)
 def create_transcription_job(req: TranscribeRequest):
     job_id = str(uuid.uuid4())
-    now = utc_now()
-
-    with jobs_lock:
-        jobs[job_id] = JobStatus(
-            job_id=job_id,
-            status="queued",
-            total_videos=len(req.urls or []),
-            videos=[VideoJobStatus(url=url) for url in (req.urls or [])],
-            created_at=now,
-            updated_at=now,
-        )
+    create_job_status(job_id, req)
 
     executor.submit(process_transcription_job, job_id, req)
 

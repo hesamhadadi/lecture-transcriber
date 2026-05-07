@@ -6,6 +6,7 @@ The service does not require OpenAI or any external paid transcription API. All 
 
 ## Features
 
+- Polished web UI at `GET /`
 - Transcribe one video synchronously with `POST /transcribe`
 - Queue one or more videos for background processing with `POST /transcribe/jobs`
 - Poll reliable job progress with `GET /transcribe/jobs/{job_id}`
@@ -48,6 +49,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 Open:
 
+- Web UI: `http://localhost:8000/`
 - API health: `http://localhost:8000/health`
 - OpenAPI docs: `http://localhost:8000/docs`
 

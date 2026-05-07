@@ -12,6 +12,8 @@ from typing import Literal
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from faster_whisper import WhisperModel
 from pydantic import BaseModel, Field, model_validator
 
@@ -38,6 +40,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 WORKDIR = Path(os.getenv("WORKDIR", BASE_DIR / "workdir"))
 WORKDIR.mkdir(parents=True, exist_ok=True)
+STATIC_DIR = BASE_DIR / "static"
 
 MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
 MODEL_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
@@ -47,6 +50,8 @@ MAX_WORKERS = max(1, int(os.getenv("TRANSCRIBE_WORKERS", "1")))
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 jobs_lock = threading.Lock()
 jobs: dict[str, "JobStatus"] = {}
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class TranscribeRequest(BaseModel):
@@ -91,6 +96,14 @@ class JobCreateResponse(BaseModel):
     result_url: str
 
 
+class VideoJobStatus(BaseModel):
+    url: str
+    status: Literal["queued", "running", "completed", "failed"] = "queued"
+    progress: int = 0
+    phase: str = "queued"
+    error: str | None = None
+
+
 class JobStatus(BaseModel):
     job_id: str
     status: Literal["queued", "running", "completed", "failed"]
@@ -102,6 +115,7 @@ class JobStatus(BaseModel):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+    videos: list[VideoJobStatus] = Field(default_factory=list)
     result: TranscribeResponse | None = None
 
 
@@ -114,6 +128,7 @@ class JobStatusResponse(BaseModel):
     completed_videos: int
     current_video: str | None = None
     error: str | None = None
+    videos: list[VideoJobStatus]
     result_available: bool
     created_at: datetime
     updated_at: datetime
@@ -121,11 +136,7 @@ class JobStatusResponse(BaseModel):
 
 @app.get("/")
 def root():
-    return {
-        "status": "ok",
-        "service": "lecture-transcriber",
-        "transcription": "local faster-whisper",
-    }
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
@@ -163,6 +174,23 @@ def update_job(job_id: str, **updates) -> None:
         jobs[job_id] = JobStatus(**data)
 
 
+def update_video_job(
+    job_id: str,
+    video_index: int,
+    **updates,
+) -> None:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job or video_index >= len(job.videos):
+            return
+
+        data = job.model_dump()
+        video_data = data["videos"][video_index]
+        video_data.update(updates)
+        data["updated_at"] = utc_now()
+        jobs[job_id] = JobStatus(**data)
+
+
 def get_job_or_404(job_id: str) -> JobStatus:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -183,6 +211,7 @@ def to_job_status_response(job: JobStatus) -> JobStatusResponse:
         completed_videos=job.completed_videos,
         current_video=job.current_video,
         error=job.error,
+        videos=job.videos,
         result_available=job.result is not None,
         created_at=job.created_at,
         updated_at=job.updated_at,
@@ -421,6 +450,12 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
         per_video = 100 / max(len(urls), 1)
         progress = int((video_index * per_video) + (phase_offset + phase_span * local_progress / 100) * per_video / 100)
         update_job(job_id, progress=max(0, min(progress, 99)))
+        video_progress = phase_offset + (phase_span * local_progress / 100)
+        update_video_job(
+            job_id,
+            video_index,
+            progress=max(0, min(int(video_progress), 99)),
+        )
 
     try:
         update_job(job_id, status="running", phase="starting", progress=0)
@@ -435,15 +470,23 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
                 current_video=url,
                 completed_videos=video_index,
             )
+            update_video_job(
+                job_id,
+                video_index,
+                status="running",
+                phase="downloading",
+            )
             set_video_progress(video_index, 0, 20, 0)
             video_path = download_video(url, video_dir)
             set_video_progress(video_index, 0, 20, 100)
 
             update_job(job_id, phase="extracting_audio")
+            update_video_job(job_id, video_index, phase="extracting_audio")
             audio_path = extract_audio(video_path, video_dir)
             set_video_progress(video_index, 20, 15, 100)
 
             update_job(job_id, phase="transcribing")
+            update_video_job(job_id, video_index, phase="transcribing")
 
             def on_transcribe_progress(local_progress: int) -> None:
                 set_video_progress(video_index, 35, 65, local_progress)
@@ -461,6 +504,13 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
                 )
             )
             update_job(job_id, completed_videos=video_index + 1)
+            update_video_job(
+                job_id,
+                video_index,
+                status="completed",
+                phase="completed",
+                progress=100,
+            )
 
         response = TranscribeResponse(
             transcript=combine_transcripts(transcripts),
@@ -476,6 +526,14 @@ def process_transcription_job(job_id: str, req: TranscribeRequest) -> None:
             result=response,
         )
     except Exception as exc:
+        active_index = min(len(transcripts), max(len(urls) - 1, 0))
+        update_video_job(
+            job_id,
+            active_index,
+            status="failed",
+            phase="failed",
+            error=str(exc),
+        )
         update_job(
             job_id,
             status="failed",
@@ -497,6 +555,7 @@ def transcribe(req: TranscribeRequest):
             job_id=job_id,
             status="queued",
             total_videos=len(req.urls or []),
+            videos=[VideoJobStatus(url=url) for url in (req.urls or [])],
             created_at=now,
             updated_at=now,
         )
@@ -523,6 +582,7 @@ def create_transcription_job(req: TranscribeRequest):
             job_id=job_id,
             status="queued",
             total_videos=len(req.urls or []),
+            videos=[VideoJobStatus(url=url) for url in (req.urls or [])],
             created_at=now,
             updated_at=now,
         )

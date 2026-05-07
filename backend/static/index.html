@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hesam Lecture Transcriber</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">HL</span>
+          <span>
+            <strong>Hesam Lecture</strong>
+            <small>Transcriber</small>
+          </span>
+        </a>
+        <div class="status-strip">
+          <span id="healthState">Checking</span>
+          <b>Local Whisper</b>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Built by Hesam Hadadi</p>
+          <h1>Turn lecture videos into clean, readable transcripts.</h1>
+          <p class="lead">
+            Queue multiple videos, track every task in real time, and export polished paragraph-based transcripts without paid transcription APIs.
+          </p>
+        </div>
+        <div class="hero-stats" aria-label="Pipeline summary">
+          <div>
+            <span>Jobs</span>
+            <strong id="jobCount">0</strong>
+          </div>
+          <div>
+            <span>Running</span>
+            <strong id="runningCount">0</strong>
+          </div>
+          <div>
+            <span>Complete</span>
+            <strong id="completedCount">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <form id="jobForm" class="composer">
+          <div class="panel-head">
+            <div>
+              <span class="section-kicker">New Batch</span>
+              <h2>Paste video URLs</h2>
+            </div>
+            <button class="ghost-button" type="button" id="clearUrls">Clear</button>
+          </div>
+          <textarea
+            id="urls"
+            name="urls"
+            rows="8"
+            placeholder="One URL per line&#10;https://example.com/lecture-1.mp4&#10;https://example.com/lecture-2.mp4"
+            required
+          ></textarea>
+
+          <div class="controls">
+            <label>
+              Language
+              <input id="language" name="language" placeholder="auto, en, fa" />
+            </label>
+            <button class="primary-button" type="submit">
+              Start Background Job
+            </button>
+          </div>
+        </form>
+
+        <aside class="inspector">
+          <span class="section-kicker">Pipeline</span>
+          <h2>Local processing</h2>
+          <div class="pipeline">
+            <div><i></i><span>Download media</span></div>
+            <div><i></i><span>Extract audio</span></div>
+            <div><i></i><span>Transcribe locally</span></div>
+            <div><i></i><span>Format paragraphs</span></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="jobs-section">
+        <div class="panel-head">
+          <div>
+            <span class="section-kicker">Live Queue</span>
+            <h2>Task Board</h2>
+          </div>
+          <button class="ghost-button" type="button" id="clearJobs">Clear finished</button>
+        </div>
+        <div id="jobs" class="jobs empty">
+          <p>No jobs yet. Add a few lecture links and start a background job.</p>
+        </div>
+      </section>
+    </main>
+
+    <template id="jobTemplate">
+      <article class="job-card">
+        <div class="job-topline">
+          <div>
+            <span class="pill"></span>
+            <h3></h3>
+          </div>
+          <strong class="job-percent"></strong>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill"></div>
+        </div>
+        <div class="job-meta"></div>
+        <div class="video-list"></div>
+        <div class="transcript hidden">
+          <div class="transcript-actions">
+            <strong>Transcript</strong>
+            <div>
+              <button class="ghost-button copy-button" type="button">Copy</button>
+              <button class="ghost-button download-button" type="button">Download</button>
+            </div>
+          </div>
+          <pre></pre>
+        </div>
+      </article>
+    </template>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

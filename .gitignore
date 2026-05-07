@@ -1,9 +1,10 @@
 .env
 backend/.env
+.venv/
 backend/.venv/
-backend/workdir/
 __pycache__/
-*.pyc
+*.py[cod]
+backend/workdir/
 .DS_Store
 node_modules/
 .next/

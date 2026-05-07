@@ -195,6 +195,46 @@ def load_job(job_id: str) -> JobStatus | None:
         return None
 
 
+def interrupt_unfinished_jobs() -> None:
+    message = "The API restarted before this job finished. Please start a new job."
+
+    for path in JOBS_DIR.glob("*.json"):
+        try:
+            job = JobStatus.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        if job.status not in {"queued", "running"}:
+            continue
+
+        data = job.model_dump()
+        data.update(
+            {
+                "status": "failed",
+                "phase": "failed",
+                "error": message,
+                "current_video": None,
+                "updated_at": utc_now(),
+            }
+        )
+
+        for video in data["videos"]:
+            if video["status"] in {"queued", "running"}:
+                video["status"] = "failed"
+                video["phase"] = "failed"
+                video["error"] = message
+
+        interrupted_job = JobStatus(**data)
+        jobs[interrupted_job.job_id] = interrupted_job
+        save_job(interrupted_job)
+
+
+@app.on_event("startup")
+def recover_jobs_after_startup() -> None:
+    with jobs_lock:
+        interrupt_unfinished_jobs()
+
+
 def create_job_status(job_id: str, req: TranscribeRequest) -> JobStatus:
     now = utc_now()
     job = JobStatus(

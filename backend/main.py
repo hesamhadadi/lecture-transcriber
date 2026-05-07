@@ -45,9 +45,11 @@ JOBS_DIR = WORKDIR / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
 
-MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
+MODEL_NAME = os.getenv("WHISPER_MODEL", "tiny")
 MODEL_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 MODEL_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+MODEL_CPU_THREADS = max(1, int(os.getenv("WHISPER_CPU_THREADS", str(os.cpu_count() or 1))))
+MODEL_NUM_WORKERS = max(1, int(os.getenv("WHISPER_NUM_WORKERS", "1")))
 MAX_WORKERS = max(1, int(os.getenv("TRANSCRIBE_WORKERS", "1")))
 
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -158,6 +160,8 @@ def get_whisper_model() -> WhisperModel:
         MODEL_NAME,
         device=MODEL_DEVICE,
         compute_type=MODEL_COMPUTE_TYPE,
+        cpu_threads=MODEL_CPU_THREADS,
+        num_workers=MODEL_NUM_WORKERS,
     )
 
 
@@ -456,6 +460,9 @@ def transcribe_audio(
         str(audio_path),
         language=language,
         vad_filter=True,
+        beam_size=1,
+        best_of=1,
+        condition_on_previous_text=False,
     )
 
     segments: list[Segment] = []

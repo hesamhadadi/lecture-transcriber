@@ -33,7 +33,7 @@ function phaseLabel(phase) {
     starting: "Starting",
     downloading: "Downloading",
     extracting_audio: "Extracting audio",
-    transcribing: "Transcribing",
+    transcribing: "Transcribing. Long lectures can stay here for a while on small VPSs",
     completed: "Completed",
     failed: "Failed",
   };

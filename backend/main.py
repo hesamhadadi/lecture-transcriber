@@ -52,6 +52,13 @@ MODEL_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 MODEL_CPU_THREADS = max(1, int(os.getenv("WHISPER_CPU_THREADS", str(os.cpu_count() or 1))))
 MODEL_NUM_WORKERS = max(1, int(os.getenv("WHISPER_NUM_WORKERS", "1")))
 MODEL_VAD_FILTER = os.getenv("WHISPER_VAD_FILTER", "false").lower() in {"1", "true", "yes"}
+TRANSCRIPTION_PROMPT = os.getenv(
+    "WHISPER_INITIAL_PROMPT",
+    (
+        "University lecture about Big Data, Hadoop, MapReduce, Spark, Spark SQL, "
+        "RDD, PySpark, GraphX, GraphFrames, PageRank, SQL, Java, Python, Polito."
+    ),
+)
 MAX_WORKERS = max(1, int(os.getenv("TRANSCRIBE_WORKERS", "1")))
 
 executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
@@ -543,23 +550,48 @@ def format_segments_as_paragraphs(segments: list[Segment]) -> str:
 
 
 TERM_REPLACEMENTS = [
-    (re.compile(r"\b(a\s*loop|adoop|a dup|hadup|hadoop)\b", re.IGNORECASE), "Hadoop"),
-    (re.compile(r"\b(map\s*redus|map\s*reduse|map\s*produced|mop\s*reduce|mapreduce)\b", re.IGNORECASE), "MapReduce"),
+    (re.compile(r"\b(a\s*loop|adoop|a dup|hadup|adobe|hadoop)\b", re.IGNORECASE), "Hadoop"),
+    (re.compile(r"\b(map\s*redus|map\s*reduse|map\s*produced|mop\s*reduce|mapr[\s-]*duz|mapreduce)\b", re.IGNORECASE), "MapReduce"),
     (re.compile(r"\b(spark\s*sql|sparksql)\b", re.IGNORECASE), "Spark SQL"),
-    (re.compile(r"\b(rdd|rdds)\b", re.IGNORECASE), "RDD"),
-    (re.compile(r"\b(page\s*rank|space\s*rank|page\s*right)\b", re.IGNORECASE), "PageRank"),
+    (re.compile(r"\b(rdd|rdds|other\s+data\s+structure)\b", re.IGNORECASE), "RDD"),
+    (re.compile(r"\b(page\s*rank|space\s*rank|page\s*right|page\s*write)\b", re.IGNORECASE), "PageRank"),
     (re.compile(r"\b(graph\s*x)\b", re.IGNORECASE), "GraphX"),
     (re.compile(r"\b(graph\s*frames?|graph\s*fame)\b", re.IGNORECASE), "GraphFrames"),
     (re.compile(r"\b(py\s*spark|pyspark)\b", re.IGNORECASE), "PySpark"),
     (re.compile(r"\b(polito|polit[o0])\b", re.IGNORECASE), "Polito"),
+    (re.compile(r"\b(jupiter notebook)\b", re.IGNORECASE), "Jupyter Notebook"),
+    (re.compile(r"\b(visual studio environment)\b", re.IGNORECASE), "Visual Studio Code environment"),
+    (re.compile(r"\b(machine learning artificial intelligence)\b", re.IGNORECASE), "Machine Learning and Artificial Intelligence"),
     (re.compile(r"\b(sql)\b", re.IGNORECASE), "SQL"),
 ]
+
+
+def normalize_transcript_terms(text: str) -> str:
+    for pattern, replacement in TERM_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
+
+    return text
+
+
+def is_noise_paragraph(words: list[str]) -> bool:
+    noise_words = {"you", "the", "um", "uh", "ah", "okay", "ok"}
+
+    if not words:
+        return True
+
+    if len(words) <= 4 and all(word in noise_words for word in words):
+        return True
+
+    unique_words = set(words)
+    if len(words) <= 8 and len(unique_words) <= 2 and unique_words.issubset(noise_words):
+        return True
+
+    return False
 
 
 def clean_transcript_text(transcript: str) -> str:
     cleaned_paragraphs: list[str] = []
     previous = ""
-    noise_words = {"you", "the", "um", "uh", "ah"}
 
     for raw_paragraph in transcript.split("\n\n"):
         paragraph = " ".join(raw_paragraph.split())
@@ -568,13 +600,13 @@ def clean_transcript_text(transcript: str) -> str:
 
         normalized = re.sub(r"[^a-zA-Z ]", "", paragraph).lower().strip()
         words = normalized.split()
-        if words and len(words) <= 3 and all(word in noise_words for word in words):
+        if is_noise_paragraph(words):
             continue
 
-        for pattern, replacement in TERM_REPLACEMENTS:
-            paragraph = pattern.sub(replacement, paragraph)
-
+        paragraph = normalize_transcript_terms(paragraph)
         paragraph = re.sub(r"\b(you\s+){2,}you\b", "", paragraph, flags=re.IGNORECASE)
+        paragraph = re.sub(r"\b(okay|ok)[,.]?\s+\1\b", r"\1", paragraph, flags=re.IGNORECASE)
+        paragraph = re.sub(r"\b(\w+)(\s+\1\b){2,}", r"\1", paragraph, flags=re.IGNORECASE)
         paragraph = re.sub(r"\s+([,.?!:;])", r"\1", paragraph)
         paragraph = re.sub(r"\s{2,}", " ", paragraph).strip()
 
@@ -601,6 +633,7 @@ def transcribe_audio(
         beam_size=1,
         best_of=1,
         condition_on_previous_text=False,
+        initial_prompt=TRANSCRIPTION_PROMPT,
     )
 
     segments: list[Segment] = []

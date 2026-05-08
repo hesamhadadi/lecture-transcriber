@@ -69,6 +69,7 @@ Environment variables:
 | `WHISPER_CPU_THREADS` | CPU count | CPU threads used by faster-whisper |
 | `WHISPER_NUM_WORKERS` | `1` | faster-whisper model workers |
 | `WHISPER_VAD_FILTER` | `false` | Enable or disable VAD filtering |
+| `WHISPER_INITIAL_PROMPT` | Big Data glossary | Prompt used to bias local transcription toward course terminology |
 | `TRANSCRIBE_WORKERS` | `1` | Number of background transcription workers |
 
 ## Synchronous Transcription

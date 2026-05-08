@@ -359,7 +359,7 @@ form.addEventListener("submit", async (event) => {
     alert(error.message);
   } finally {
     submit.disabled = false;
-    submit.textContent = "Start Background Job";
+    submit.textContent = "Start background job";
   }
 });
 

@@ -6,7 +6,7 @@ The service does not require OpenAI or any external paid transcription API. All 
 
 ## Features
 
-- Polished web UI at `GET /`
+- React dashboard UI at `GET /`
 - Preview video metadata before starting a batch
 - Transcribe one video synchronously with `POST /transcribe`
 - Queue one or more videos for background processing with `POST /transcribe/jobs`
@@ -41,6 +41,16 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Build the dashboard after frontend changes:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+The frontend build writes static assets into `backend/static`, so FastAPI serves the dashboard without a separate Node process.
 
 ## Run
 
@@ -173,5 +183,6 @@ If the job is still running, the result endpoint returns HTTP `202`.
 ## Notes
 
 - The first request may take longer because `faster-whisper` downloads or loads the selected model.
+- Long lectures need enough RAM or swap. On small VPS instances, keep `WHISPER_MODEL=tiny`, `WHISPER_COMPUTE_TYPE=int8`, and `TRANSCRIBE_WORKERS=1`.
 - Temporary media files are removed after each job finishes.
-- Job state is kept in memory. Restarting the API clears queued and completed job records.
+- Job state is persisted under `WORKDIR/jobs`. If the API restarts while a job is running, that interrupted job is marked failed so the UI does not show a fake running task forever.

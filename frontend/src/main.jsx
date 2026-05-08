@@ -7,6 +7,7 @@ import {
   Download,
   FileText,
   Gauge,
+  Github,
   HardDrive,
   Info,
   Link,
@@ -184,10 +185,16 @@ function App() {
   const [jobs, setJobs] = useState(loadJobs);
   const [submitting, setSubmitting] = useState(false);
   const pollers = useRef(new Map());
+  const [activeSection, setActiveSection] = useState("dashboard");
 
   const urls = useMemo(() => getUrls(urlInput), [urlInput]);
   const running = jobs.filter((job) => job.status === "running" || job.status === "queued").length;
   const completed = jobs.filter((job) => job.status === "completed").length;
+
+  function scrollToSection(sectionId) {
+    setActiveSection(sectionId);
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   useEffect(() => {
     saveJobs(jobs);
@@ -350,11 +357,19 @@ function App() {
           </div>
         </div>
 
-        <nav>
-          <a className="active"><Gauge size={18} /> Dashboard</a>
-          <a><Activity size={18} /> Queue</a>
-          <a><FileText size={18} /> Transcripts</a>
-          <a><Server size={18} /> Local engine</a>
+        <nav aria-label="Dashboard sections">
+          <button type="button" className={activeSection === "dashboard" ? "active" : ""} onClick={() => scrollToSection("dashboard")}>
+            <Gauge size={18} /> Dashboard
+          </button>
+          <button type="button" className={activeSection === "queue" ? "active" : ""} onClick={() => scrollToSection("queue")}>
+            <Activity size={18} /> Queue
+          </button>
+          <button type="button" className={activeSection === "transcripts" ? "active" : ""} onClick={() => scrollToSection("transcripts")}>
+            <FileText size={18} /> Transcripts
+          </button>
+          <button type="button" className={activeSection === "engine" ? "active" : ""} onClick={() => scrollToSection("engine")}>
+            <Server size={18} /> Local engine
+          </button>
         </nav>
 
         <div className="engine-card">
@@ -363,13 +378,17 @@ function App() {
             <span>Engine</span>
             <strong>Local Whisper</strong>
           </div>
+          <a className="powered-link" href="https://github.com/hesamhadadi" target="_blank" rel="noreferrer">
+            <Github size={15} />
+            Powered by hesamhadadi
+          </a>
         </div>
       </aside>
 
       <section className="main-panel">
-        <header className="page-header">
+        <header className="page-header" id="dashboard">
           <div>
-            <p className="eyebrow">Built by Hesam Hadadi</p>
+            <p className="eyebrow">Local transcription studio</p>
             <h1>Lecture transcription dashboard</h1>
             <span>Manage video batches, monitor progress, and export cleaned transcripts.</span>
           </div>
@@ -385,7 +404,7 @@ function App() {
           <MetricCard icon={CheckCircle2} label="Completed" value={completed} />
         </section>
 
-        <section className="workspace-grid">
+        <section className="workspace-grid" id="engine">
           <form className="command-panel" onSubmit={submitJob}>
             <div className="panel-title">
               <div>
@@ -436,7 +455,7 @@ function App() {
           </aside>
         </section>
 
-        <section className="queue-panel">
+        <section className="queue-panel" id="queue">
           <div className="panel-title">
             <div>
               <p className="eyebrow">Live queue</p>
@@ -448,24 +467,26 @@ function App() {
             </button>
           </div>
 
-          {jobs.length > 0 ? (
-            <div className="jobs-list">
-              {jobs.map((job) => (
-                <JobCard
-                  key={job.job_id}
-                  job={job}
-                  onCopy={copyTranscript}
-                  onDownload={downloadTranscript}
-                  onRemove={removeJob}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state large">
-              <Sparkles size={24} />
-              No jobs yet. Add videos above to start a managed transcription batch.
-            </div>
-          )}
+          <div id="transcripts">
+            {jobs.length > 0 ? (
+              <div className="jobs-list">
+                {jobs.map((job) => (
+                  <JobCard
+                    key={job.job_id}
+                    job={job}
+                    onCopy={copyTranscript}
+                    onDownload={downloadTranscript}
+                    onRemove={removeJob}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state large">
+                <Sparkles size={24} />
+                No jobs yet. Add videos above to start a managed transcription batch.
+              </div>
+            )}
+          </div>
         </section>
       </section>
     </main>

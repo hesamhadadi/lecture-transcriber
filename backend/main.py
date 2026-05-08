@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -352,7 +353,9 @@ def run_command(cmd: list[str]) -> None:
 
 def read_video_metadata(url: str) -> VideoMetadata:
     cmd = [
-        "yt-dlp",
+        sys.executable,
+        "-m",
+        "yt_dlp",
         "--dump-json",
         "--skip-download",
         "--no-playlist",
@@ -415,7 +418,9 @@ def download_with_ytdlp(url: str, target_dir: Path) -> Path:
     before = {path.resolve() for path in target_dir.glob("*") if path.is_file()}
 
     cmd = [
-        "yt-dlp",
+        sys.executable,
+        "-m",
+        "yt_dlp",
         "-f",
         "bestvideo+bestaudio/best",
         "--merge-output-format",
